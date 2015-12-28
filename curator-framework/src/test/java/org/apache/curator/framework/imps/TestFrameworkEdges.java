@@ -56,6 +56,46 @@ public class TestFrameworkEdges extends BaseClassForTests
     private final Timing timing = new Timing();
 
     @Test
+    public void testProtectedCreateNodeDeletion() throws Exception
+    {
+        CuratorFramework client = CuratorFrameworkFactory.newClient(server.getConnectString(), timing.session(), 1, new RetryNTimes(0, 0));
+        try
+        {
+            client.start();
+
+            for ( int i = 0; i < 2; ++i )
+            {
+                CuratorFramework localClient = (i == 0) ? client : client.usingNamespace("nm");
+                localClient.create().forPath("/parent");
+                Assert.assertEquals(localClient.getChildren().forPath("/parent").size(), 0);
+
+                CreateBuilderImpl createBuilder = (CreateBuilderImpl)localClient.create();
+                createBuilder.failNextCreateForTesting = true;
+                FindAndDeleteProtectedNodeInBackground.debugInsertError.set(true);
+                try
+                {
+                    createBuilder.withProtection().forPath("/parent/test");
+                    Assert.fail("failNextCreateForTesting should have caused a ConnectionLossException");
+                }
+                catch ( KeeperException.ConnectionLossException e )
+                {
+                    // ignore, correct
+                }
+
+                timing.sleepABit();
+                List<String> children = localClient.getChildren().forPath("/parent");
+                Assert.assertEquals(children.size(), 0, children.toString()); // protected mode should have deleted the node
+
+                localClient.delete().forPath("/parent");
+            }
+        }
+        finally
+        {
+            CloseableUtils.closeQuietly(client);
+        }
+    }
+
+    @Test
     public void testPathsFromProtectingInBackground() throws Exception
     {
         for ( CreateMode mode : CreateMode.values() )
